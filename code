@@ -1,0 +1,207 @@
+clc; clear;
+
+while true
+    % ASCII Art
+    disp('              ____________________________');
+    disp('             |                            |');
+    disp('             |      :)  PETROL STATION    |');
+    disp(' ____________|____________________________|____________');
+    disp('|                                                      |');
+    disp('|        ______    ______    ______    ______          |');
+    disp('|       |      |  |      |  |      |  |      |         |');
+    disp('|       |PUMP 1|  |PUMP 2|  |PUMP 3|  |PUMP 4|         |');
+    disp('|       |______|  |______|  |______|  |______|         |');
+    disp('|______________________________________________________|');
+    disp(' ');
+
+    disp('1. Details of the Queue Simulator');
+    disp('2. Start Simulation');
+    disp('3. Exit');
+    choice = input('Enter your choice: ');
+
+    if choice == 1
+        disp('Simulates petrol station queue with:');
+        disp('- 2 lanes, 4 pumps');
+        disp('- LCG or rand()');
+        disp('- Peak or Non-Peak mode');
+        disp('- Tables, evaluation & graphs');
+    elseif choice == 3
+        disp('Exiting...'); break;
+    elseif choice ~= 2
+        disp('Invalid option.'); continue;
+    end
+
+    % Simulation settings
+    rng_choice = input('RNG Method - 1 = rand(), 2 = LCG: ');
+    mode_choice = input('Mode - 1 = Non-Peak, 2 = Peak: ');
+    N = input('Number of vehicles to simulate: ');
+    
+    seed = 2;
+
+        % CDF Setup
+    if mode_choice == 1
+        inter_arr_range = [3 4 5 6];
+        inter_arr_cdf = [0.2 0.5 0.8 1.0];
+    else
+        inter_arr_range = [1 2 3];
+        inter_arr_cdf = [0.4 0.8 1.0];
+    end
+
+    refuel_range = [4 5 6 7];
+    refuel_cdf = [0.2 0.6 0.9 1.0];
+    petrol_cdf = [0.5 0.8 1.0];
+    petrol_prices = [2.05, 2.30, 2.15];
+    types = {'Primax95', 'Primax97', 'Diesel'};
+
+    % Init
+    arrival_times = zeros(1,N);
+    inter_arr_time_values = zeros(1,N);
+    rand_inter_arr = zeros(1,N); rand_refuel = zeros(1,N); rand_petrol_type = zeros(1,N);
+    refuel_times = zeros(1,N); quantities = floor(25 + rand(1,N)*21);
+    vehicle_types = zeros(1,N);
+    lane_assignment = zeros(1,N); pump_assignment = zeros(1,N);
+    refuel_start = zeros(1,N); refuel_end = zeros(1,N);
+    waiting_time = zeros(1,N); time_spent = zeros(1,N);
+    pump_busy_until = zeros(1,4);
+
+    % RNG Loop
+    for i = 1:N
+        % Inter-arrival
+        if rng_choice == 2
+            seed = mod(1664525*seed + 1013904223, 2^32);
+            u = seed / 2^32;
+        else
+            u = rand();
+        end
+        rand_inter_arr(i) = u;
+        for j = 1:length(inter_arr_cdf)
+            if u <= inter_arr_cdf(j)
+                inter_arr_time_values(i) = inter_arr_range(j); break;
+            end
+        end
+        if i == 1
+            arrival_times(i) = 0;
+        else
+            arrival_times(i) = arrival_times(i-1) + inter_arr_time_values(i);
+        end
+
+                % Refuel time
+        if rng_choice == 2
+            seed = mod(1664525*seed + 1013904223, 2^32);
+            u2 = seed / 2^32;
+        else
+            u2 = rand();
+        end
+        rand_refuel(i) = u2;
+        for j = 1:length(refuel_cdf)
+            if u2 <= refuel_cdf(j)
+                refuel_times(i) = refuel_range(j); break;
+            end
+        end
+
+        % Petrol type
+        if rng_choice == 2
+            seed = mod(1664525*seed + 1013904223, 2^32);
+            u3 = seed / 2^32;
+        else
+            u3 = rand();
+        end
+        rand_petrol_type(i) = u3;
+        if u3 <= petrol_cdf(1)
+            vehicle_types(i) = 1;
+        elseif u3 <= petrol_cdf(2)
+            vehicle_types(i) = 2;
+        else
+            vehicle_types(i) = 3;
+        end
+    end
+
+    % Simulation
+    for i = 1:N
+        arr = arrival_times(i);
+        lane_values = [max(pump_busy_until(1:2)), max(pump_busy_until(3:4))];
+        [minVal, lane] = min(lane_values);
+        lane_assignment(i) = lane;
+        pumps = (lane==1)*[1 2] + (lane==2)*[3 4];
+
+        if pump_busy_until(pumps(1)) <= pump_busy_until(pumps(2))
+            pump = pumps(1); minFree = pump_busy_until(pumps(1));
+        else
+            pump = pumps(2); minFree = pump_busy_until(pumps(2));
+        end
+
+        pump_assignment(i) = pump;
+        start = max(arr, minFree);
+        refuel_start(i) = start;
+        refuel_end(i) = start + refuel_times(i);
+        waiting_time(i) = start - arr;
+        time_spent(i) = refuel_times(i) + waiting_time(i);
+        pump_busy_until(pump) = refuel_end(i);
+
+        % Log
+        fprintf('Vehicle %d arrived at %d and began refueling with %s at Pump %d\n', ...
+            i, arr, types{vehicle_types(i)}, pump);
+        fprintf('Vehicle %d finished and departed at %d\n', i, refuel_end(i));
+    end
+
+      
+    % Table 1
+    disp(' '); disp('=== Table 1: Arrival & Assignment Info ===');
+    disp('Veh | Petrol | Qty | Price(RM) | Rand_IAT | IAT | Arr | Line | Rand_Refuel | RefuelTime');
+    for i = 1:N
+        price = quantities(i) * petrol_prices(vehicle_types(i));
+        fprintf('%3d | %-7s | %3d | %9.2f | %8.4f | %3d | %3d | %4d | %11.4f | %5d\n', ...
+            i, types{vehicle_types(i)}, quantities(i), price, rand_inter_arr(i), ...
+            inter_arr_time_values(i), arrival_times(i), lane_assignment(i), ...
+            rand_refuel(i), refuel_times(i));
+    end
+
+    % Table 2
+    disp(' '); disp('=== Table 2: Pump + Wait Time ===');
+    disp('Veh | Pump | Start | End | Waiting | Spent');
+    for i = 1:N
+        fprintf('%3d | %4d | %5d | %3d | %7d | %5d\n', ...
+            i, pump_assignment(i), refuel_start(i), refuel_end(i), waiting_time(i), time_spent(i));
+    end
+
+      % Evaluation
+    fprintf('\n=== Evaluation ===\n');
+    fprintf('Average Waiting Time      : %.2f mins\n', mean(waiting_time));
+    fprintf('Probability of Waiting    : %.2f\n', sum(waiting_time>0)/N);
+    fprintf('Average Refueling Time    : %.2f mins\n', mean(refuel_times));
+    fprintf('Average Time in System    : %.2f mins\n', mean(time_spent));
+    fprintf('Average Inter-Arrival Time: %.2f mins\n', mean(diff(arrival_times)));
+
+    
+    % Graphs
+close all;  % <- Add this before graph section
+
+% Figure 1: Fuel Type Frequency
+figure(1); clf;
+x = [1, 2, 3];
+y = [sum(vehicle_types==1), sum(vehicle_types==2), sum(vehicle_types==3)];
+plot(x, y, '-ob', 'LineWidth', 2); grid on;
+title('Fuel Type Frequency');
+xlabel('Fuel Type (1=Primax95, 2=Primax97, 3=Diesel)');
+ylabel('Number of Vehicles');
+ylim([0 N]);  
+drawnow;
+
+% Figure 2
+figure(2); clf;
+plot(1:N, refuel_times, '-og', 'LineWidth', 1.5);
+xlabel('Vehicle Number');
+ylabel('Refueling Time (minutes)');
+title('Refueling Time per Vehicle');
+grid on;
+drawnow;
+
+% Figure 3
+figure(3); clf;
+plot(1:N, waiting_time, '-or', 'LineWidth', 1.5);
+xlabel('Vehicle Number');
+ylabel('Waiting Time (minutes)');
+title('Waiting Time per Vehicle');
+grid on;
+drawnow;
+end
